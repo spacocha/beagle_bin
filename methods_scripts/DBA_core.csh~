@@ -1,0 +1,18 @@
+#! /bin/sh
+#$ -S /bin/bash
+# -cwd
+
+
+#load in the modules necessary for this analysis
+source /etc/profile.d/modules.sh
+module add R/2.12.1
+module load mothur
+
+#make this work- it's what I want to put in the paper
+perl ~/bin/subsample_fasta.pl $1 ${SGE_TASK_ID} $2 > final.${SGE_TASK_ID}.fasta
+perl ~/bin/subsample_mat.pl final.seqs.count -f final.${SGE_TASK_ID}.fasta > final.${SGE_TASK_ID}.seqs.count
+mothur "#dist.seqs(fasta=final.${SGE_TASK_ID}.fasta, cutoff=0.15)"
+mothur "#degap.seqs(fasta=final.${SGE_TASK_ID}.fasta)"
+mothur "#dist.seqs(fasta=final.${SGE_TASK_ID}.ng.fasta, cutoff=0.15)"
+perl distribution_based_clustering.pl -d final.${SGE_TASK_ID}.dist,final.${SGE_TASK_ID}.ng.dist -m final.${SGE_TASK_ID}.seqs.count -out final.${SGE_TASK_ID}_DBA -dsttype pair -verbose -fasta final.${SGE_TASK_ID}.fasta 
+

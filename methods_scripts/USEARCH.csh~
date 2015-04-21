@@ -1,0 +1,30 @@
+#! /bin/sh
+#$ -S /bin/bash
+# -cwd
+
+source /etc/profile.d/modules.sh
+module load qiime-default
+module load mothur
+#fasta file name in QIIME format
+FASTAFILE=$1
+#output folder (unique)
+MATFILE=$2
+#reference fasta file (latest greengenes OTUS)
+REFERENCEFA=/data/spacocha/Qiime_dir/greengenes/gg_12_10_otus/rep_set/97_otus.fasta
+#reference taxonomies
+REFERENCETAX=/data/spacocha/Qiime_dir/greengenes/gg_12_10_otus/taxonomy/97_otu_taxonomy.txt
+PARAMS=/home/spacocha/bin/methods_scripts/open_ref_params.txt
+
+echo "Start time"
+date +"%m-%d-%y"
+date +"%T"
+
+perl ~/bin/fasta2uchime_mat.pl
+~/bin/usearch6.0.307_i86linux32 -cluster_fast ${FASTAFILE} -id 0.97 -uc ${FASTAFILE}.uc
+perl ~/bin/UC2list2.pl ${FASTAFILE}.uc > ${FASTAFILE}.list
+perl ~/bin/list2mat.pl ${MATFILE} ${FASTAFILE}.list eco > ${FASTAFILE}.list.mat
+perl ~/bin/fasta2filter_from_mat.pl  ${UNIQUE}.list.mat ${FASTAFILE} > ${FASTAFILE}.list.mat.fa
+
+echo "End time"
+date +"%m-%d-%y"
+date +"%T"

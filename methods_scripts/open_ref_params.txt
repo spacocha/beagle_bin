@@ -1,0 +1,4 @@
+pick_otus:otu_picking_method uclust_ref
+pick_otus:refseqs_fp /data/spacocha/Qiime_dir/greengenes/gg_12_10_otus/rep_set/97_otus.fasta
+pick_otus:enable_rev_strand_match True
+pick_otus:suppress_new_clusters	  False

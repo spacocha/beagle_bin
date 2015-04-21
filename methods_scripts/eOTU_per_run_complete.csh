@@ -1,0 +1,98 @@
+#! /bin/sh
+#$ -S /bin/bash
+# -cwd
+
+#path to file where all of the data is
+#load in the variables from the second command line input
+. ./$1
+
+source /etc/profile.d/modules.sh
+module load qiime-default
+module load R/2.12.1
+module load mothur
+
+date +"%m-%d-%y"
+date +"%T"
+
+#process number is the first command line variable
+UNIQUE2=${UNIQUE}.${SGE_TASK_ID}.process
+
+#combines unique files
+perl ${BIN}/fasta2unique_table5.pl ${QIIMEFILE} ${UNIQUE}
+
+#makes a fake OTU list with all entries on the first line
+perl ${BIN}/fasta2list_single.pl ${UNIQUE}.fa > ${PCLUSTOUTPUT}
+
+#make filtered fa, mat and trans files for each process
+perl ${BIN}/list_through_filter_from_mat3.pl ${PCLUSTOUTPUT} ${SGE_TASK_ID} ${UNIQUE}.fa ${UNIQUE}.trans ${FNUMBER} ${UNIQUE2}.f${FNUMBER} ${COMBREPS}
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.fa ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.fa is empty; stopped program after list_through_filter_from_mat.pl" ;
+exit;
+fi ;
+
+#Align the sequences with mothur
+mothur "#align.seqs(template=${FALIGN},candidate=${UNIQUE2}.f${FNUMBER}.fa)" > ${UNIQUE2}.f${FNUMBER}.mothurout
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.align ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.align is empty; stopped program after mothur:align.seqs" ;
+exit;
+fi ;
+
+#make the distance matrix from the aligned sequences
+FastTree -nt -makematrix ${UNIQUE2}.f${FNUMBER}.align > ${UNIQUE2}.f${FNUMBER}.dst
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.dst ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.dst is empty; stopped program after FastTree" ;
+exit;
+fi ;
+
+FastTree -nt -makematrix ${UNIQUE2}.f${FNUMBER}.fa > ${UNIQUE2}.f${FNUMBER}.unaligned.dst
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.unaligned.dst ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.unaligned.dst is empty; stopped program after FastTree" ;
+exit;
+fi ;
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file.1 -out ${UNIQUE2}.f${FNUMBER}.err.1 -log ${UNIQUE2}.f${FNUMBER}.log.1 -dist ${CUTOFF} ${VARSTRING} -libtype 1 -libheader SeqLane -libfile ${MAPPING}
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file.2 -out ${UNIQUE2}.f${FNUMBER}.err.2 -log ${UNIQUE2}.f${FNUMBER}.log.2 -dist ${CUTOFF} ${VARSTRING} -libtype 2 -libheader SeqLane -libfile ${MAPPING}
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file.3 -out ${UNIQUE2}.f${FNUMBER}.err.3 -log ${UNIQUE2}.f${FNUMBER}.log.3 -dist ${CUTOFF} ${VARSTRING} -libtype 3 -libheader SeqLane -libfile ${MAPPING}
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.err.3 ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.err.3 is empty; stopped program after ${ERRORPROGRAM}" ;
+exit;
+fi ;
+
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.1 > ${UNIQUE2}.f${FNUMBER}.err.list.1
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.2 > ${UNIQUE2}.f${FNUMBER}.err.list.2
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.3 > ${UNIQUE2}.f${FNUMBER}.err.list.3
+
+echo "${UNIQUE2}.f${FNUMBER}.err.list.1
+${UNIQUE2}.f${FNUMBER}.err.list.2
+${UNIQUE2}.f${FNUMBER}.err.list.3" > ${UNIQUE2}.parentonlytrans
+
+perl ~/bin/parent_only_translation.pl ${UNIQUE2}.parentonlytrans ${UNIQUE2}.f${FNUMBER}.fa ${UNIQUE2}.f${FNUMBER}.mat ${UNIQUE2}.results
+
+
+date +"%m-%d-%y"
+date +"%T"
+
+rm ${UNIQUE2}.R_file.chi
+rm ${UNIQUE2}.R_file.chisim
+rm ${UNIQUE2}.R_file.err
+rm ${UNIQUE2}.R_file.fis
+rm ${UNIQUE2}.R_file.fisp
+rm ${UNIQUE2}.R_file.in
+rm ${UNIQUE2}.R_file.lic

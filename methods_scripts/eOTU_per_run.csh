@@ -1,0 +1,81 @@
+#! /bin/sh
+#$ -S /bin/bash
+# -cwd
+
+#path to file where all of the data is
+#load in the variables from the second command line input
+. ./$1
+
+source /etc/profile.d/modules.sh
+module load qiime-default
+module load R/2.12.1
+module load mothur
+
+#process number is the first command line variable
+UNIQUE2=${UNIQUE}.${SGE_TASK_ID}.process
+
+
+#make filtered fa, mat and trans files for each process
+perl ${BIN}/list_through_filter_from_mat3.pl ${PCLUSTOUTPUT} ${SGE_TASK_ID} ${UNIQUE}.fa ${UNIQUE}.trans ${FNUMBER} ${UNIQUE2}.f${FNUMBER} ${COMBREPS}
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.fa ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.fa is empty; stopped program after list_through_filter_from_mat.pl" ;
+exit;
+fi ;
+
+#Align the sequences with mothur
+mothur "#align.seqs(template=${FALIGN},candidate=${UNIQUE2}.f${FNUMBER}.fa)"
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.align ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.align is empty; stopped program after mothur:align.seqs" ;
+exit;
+fi ;
+
+#make the distance matrix from the aligned sequences
+FastTree -nt -makematrix ${UNIQUE2}.f${FNUMBER}.align > ${UNIQUE2}.f${FNUMBER}.dst
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.dst ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.dst is empty; stopped program after FastTree" ;
+exit;
+fi ;
+
+FastTree -nt -makematrix ${UNIQUE2}.f${FNUMBER}.fa > ${UNIQUE2}.f${FNUMBER}.unaligned.dst
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.unaligned.dst ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.unaligned.dst is empty; stopped program after FastTree" ;
+exit;
+fi ;
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file -out ${UNIQUE2}.f${FNUMBER}.err.1 -log ${UNIQUE2}.f${FNUMBER}.log.1 -dist ${CUTOFF} ${VARSTRING} -libtype 1 -libheader SeqLane -libfile ${MAPPING}
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file -out ${UNIQUE2}.f${FNUMBER}.err.2 -log ${UNIQUE2}.f${FNUMBER}.log.2 -dist ${CUTOFF} ${VARSTRING} -libtype 2 -libheader SeqLane -libfile ${MAPPING}
+
+perl ${BIN}/${ERRORPROGRAM} -d ${UNIQUE2}.f${FNUMBER}.dst,${UNIQUE2}.f${FNUMBER}.unaligned.dst -m ${UNIQUE2}.f${FNUMBER}.mat -R ${UNIQUE2}.R_file -out ${UNIQUE2}.f${FNUMBER}.err.3 -log ${UNIQUE2}.f${FNUMBER}.log.3 -dist ${CUTOFF} ${VARSTRING} -libtype 3 -libheader SeqLane -libfile ${MAPPING}
+
+if [[ -s ${UNIQUE2}.f${FNUMBER}.err.3 ]] ; then
+NULLVAR=0
+else
+echo "PipeStop error:${UNIQUE2}.f${FNUMBER}.err.3 is empty; stopped program after ${ERRORPROGRAM}" ;
+exit;
+fi ;
+
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.1 > ${UNIQUE2}.f${FNUMBER}.err.list.1
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.2 > ${UNIQUE2}.f${FNUMBER}.err.list.2
+perl ${BIN}/err2list2.pl ${UNIQUE2}.f${FNUMBER}.err.3 > ${UNIQUE2}.f${FNUMBER}.err.list.3
+
+echo "${UNIQUE2}.f${FNUMBER}.err.list.1
+${UNIQUE2}.f${FNUMBER}.err.list.2
+${UNIQUE2}.f${FNUMBER}.err.list.3" > ${UNIQUE2}.f0.parent
+
+perl ${BIN}/parent_only_translation2.pl ${UNIQUE2}.f0.parent ${UNIQUE2}.f${FNUMBER}.fa ${UNIQUE2}.f${FNUMBER}.mat ${UNIQUE2}.f${FNUMBER}.results
+
+#make a new fasta file from the errs with only the parents in a special uchime format incluing abundances
+

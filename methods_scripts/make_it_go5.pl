@@ -1,0 +1,139 @@
+#! /usr/bin/perl -w
+#
+#
+
+	die "Usage: variable_file\n" unless (@ARGV);
+	($vfile) = (@ARGV);
+
+	die "Please follow command line args\n" unless ($vfile);
+chomp ($vfile);
+
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
+$isdst="NA";
+$wday="NA";
+$yday="NA";
+$newyear = $year+1900;
+$newmonth=$mon+1;
+$lt= "$newmonth-$mday-$newyear $hour:$min:$sec";
+
+print "Time started: $lt\n";
+
+print "Reading in variables\n";
+open (IN, "<${vfile}") or die "Can't open $vfile\n";
+while ($line=<IN>){
+    chomp ($line);
+    if ($line=~/EOTUFILE=/){
+	($eOTUfile)=$line=~/EOTUFILE=(.+)$/;
+	print "eOTUfile $eOTUfile\n";
+    }
+    if ($line=~/PCLUST=/){
+	($clusterprogram)=$line=~/PCLUST=(.+)$/;
+	print "clusterprogram $clusterprogram\n";
+    }
+    if ($line=~/BIN=/){
+        ($BIN)=$line=~/BIN=(.+)$/;
+	print "BIN $BIN\n";
+    }
+    if ($line=~/UNIQUE=/){
+        ($UNIQUE)=$line=~/UNIQUE=(.+)$/;
+        print "UNIQUE $UNIQUE\n";
+    }
+    if ($line=~/QSUBNO=/){
+	($QSUBNO)=$line=~/QSUBNO=(.+)$/;
+	print "QSUBNO $QSUBNO\n";
+    }
+}
+
+
+($sysoutput) = `qsub -cwd $clusterprogram $vfile`;
+print "Job submitted: qsub -cwd $clusterprogram $vfile\n$sysoutput";
+#file2 is the output number of the submission
+(${prono}) =$sysoutput=~/Your job-*a*r*r*a*y* ([0-9]{6})/;
+die "Missing prono $prono
+$sysoutput\n" unless ($prono);
+
+print "Checking for finished status of $prono\n";
+finished_sub ($prono, 0);
+print "$clusterprogram is finished: $prono \n";
+
+${PCLUSTOUTPUT}="${UNIQUE}.PC.final.list";
+if ("-e $PCLUSTOUTPUT"){
+    open (CHECK, "<${PCLUSTOUTPUT}") or die "Can't open ${PCLUSTOUTPUT}\n";
+    for (<CHECK>){
+	$processes=${.};
+    }
+    close (CHECK);
+}
+
+$sloop=1;
+print "Beginning submission loop $sloop\n";
+until ($sloop >$processes){    
+    #figure out the range of numbers to submit
+    $eloop = $sloop+$QSUBNO;
+    if ($eloop >$processes){
+	$difference= $processes - $sloop;
+	$neweloop=$sloop + $difference;
+	$eloop = $neweloop;
+    }
+    #submit the program
+    $sysoutput = `qsub -cwd -t ${sloop}-${eloop} $eOTUfile ${vfile}`;
+    print "Submitted job:qsub -cwd -t ${sloop}-${eloop} $eOTUfile ${vfile}\n$sysoutput\n";
+    (${prono}) =$sysoutput=~/Your job-*a*r*r*a*y* ([0-9]{6})/;
+    die "Missing prono:$prono\n" unless ($prono);
+    #do a "soft finish" meaning, I will submit another round of jobs 
+    #even when there are still 2 going from any of the preceeding processes
+    print "Checking for soft finish of $prono\n";
+    finished_sub ($prono, 2);
+    push (@finisharray, $prono);
+    print "$eOTUfile is complete: sloop $sloop eloop $eloop\n";
+    $sloop+=$QSUBNO;
+    $sloop++;
+}
+
+print "Looking for hard finish of program\n";
+#now do a hard finish to make sure they are all complete
+foreach $process (@finisharray){
+    finished_sub ($process, 0);
+}
+
+system ("perl ${BIN}/evaluate_eOTU_results5.pl $vfile ${UNIQUE}_eval_output\n"); 
+
+#Run a finisher script which contains the following PLUS A UCHIME CHIMERA CHECKER! FINISH THIS
+
+($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
+$isdst="NA";
+$wday="NA";
+$yday="NA";
+$newyear = $year+1900;
+$newmonth=$mon+1;
+$lt= "$newmonth-$mday-$newyear $hour:$min:$sec";
+
+print "Time finished: $lt\n";
+
+
+
+sub finished_sub {
+    my ($prono, $limit) = (@_);
+    $sleepsec=30;
+    $finished=();
+    until ($finished){
+	#check if $prono is listed
+	#print "Checking system for ${prono}\n";
+	$qstatoutput =`qstat`;
+	(@qlines)=split ("\n", $qstatoutput);
+	$rprocesses=0;
+	$qprocesses=0;
+	foreach $qline (@qlines){
+	    ($job, $prior, $name, $user, $stat)=split (" ", $qline);
+	    $name=();
+	    $prior=();
+	    $user=();
+	    $rprocesses++  if ($job=~/^[0-9]+/ && $job eq "$prono" && $stat eq "r");
+	    $qprocesses++ if ($job=~/^[0-9]+/ && $job eq "$prono" && $stat eq "qw");
+	}
+	
+	$finished++ if ($rprocesses <= $limit && $qprocesses == 0);
+	sleep ($sleepsec);
+    }
+    return ($finished);
+}
